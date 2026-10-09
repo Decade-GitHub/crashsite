@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Crashsite.Client</AssemblyName>
+    <RootNamespace>Crashsite.Client</RootNamespace>
+    <Version>1.0.0</Version>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <SPT_ROOT Condition="'$(SPT_ROOT)' == ''">SET_PATH_HERE</SPT_ROOT>
+  </PropertyGroup>
+
+  <Target Name="CheckSptRoot" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(SPT_ROOT)\BepInEx\core\BepInEx.dll')"
+           Text="Set SPT_ROOT to an SPT 4.1.6 installation containing BepInEx/core/BepInEx.dll." />
+  </Target>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DefineConstants>$(DefineConstants);CRASHSITE_DEBUG</DefineConstants>
+    <Optimize>false</Optimize>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="BepInEx">
+      <HintPath>$(SPT_ROOT)\BepInEx\core\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(SPT_ROOT)\BepInEx\core\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="spt-common">
+      <HintPath>$(SPT_ROOT)\BepInEx\plugins\spt\spt-common.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(SPT_ROOT)\EscapeFromTarkov_Data\Managed\Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(SPT_ROOT)\EscapeFromTarkov_Data\Managed\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(SPT_ROOT)\EscapeFromTarkov_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>
+
+

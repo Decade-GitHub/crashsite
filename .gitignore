@@ -1,0 +1,8 @@
+[Bb]in/
+[Oo]bj/
+/dist/*
+!/dist/*_MANIFEST.json
+.vs/
+*.user
+*.suo
+*.log
