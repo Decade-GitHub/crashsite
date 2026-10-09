@@ -93,15 +93,14 @@ namespace Crashsite.Client
             _starterWorldStarted = false;
             try
             {
-                // Track before adding so even a partially failed insertion is rolled back.
+
                 _starterRoots.Add(weapon);
                 var address = AccessTools.Method(holster.GetType(), "CreateItemAddress", Type.EmptyTypes).Invoke(holster, null);
                 InvokeAddressAction(address, "Add", weapon);
                 if (!IsInContainer(weapon, holster)) throw new InvalidOperationException("The starter pistol did not enter Holster.");
                 _starterRoots.Add(spare);
                 if (!TryPlaceInFreeStashCell(grid, spare)) throw new InvalidOperationException("The spare magazine did not fit the granted pocket.");
-                // Match the native LocalGameMatching pool setup. Await on Unity's captured
-                // synchronization context; no inventory operations run on a thread-pool continuation.
+
                 await LoadStarterPrefabs(profile);
                 _starterServerId = serverId;
                 DebugInfo("M18 preset M9A3 equipped: 17+1 PBP and 17 spare for raid " + serverId + ".");
@@ -135,7 +134,7 @@ namespace Crashsite.Client
         {
             if (_starterWorldStarted)
             {
-                // Once gameplay started, items belong to normal raid reconciliation.
+
                 _starterRoots.Clear(); _starterProfile = null; _starterServerId = null;
                 return;
             }
@@ -156,7 +155,6 @@ namespace Crashsite.Client
             }
         }
 
-        // Validate transport data before touching retained slots or original item trees.
         private static void ValidateStarterGrant(JObject data, string serverId, string equipmentId, string pocketsId)
         {
             string Value(string name) => (string)data[name] ?? (string)data[char.ToLowerInvariant(name[0]) + name.Substring(1)];

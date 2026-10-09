@@ -1,5 +1,6 @@
-param([string]$Assembly='client',[string]$TypePattern='',[string]$MethodPattern='',[switch]$Body)
-$root='C:\Programas\Steam\steamapps\common\SPT'
+param([string]$Assembly='client',[string]$TypePattern='',[string]$MethodPattern='',[switch]$Body,[string]$SptRoot=$env:SPT_ROOT)
+if (-not $SptRoot) { throw 'Set SPT_ROOT or pass -SptRoot to an SPT 4.1.6 installation.' }
+$root=$SptRoot
 Add-Type -Path "$root/SPT_Runtime/Mono.Cecil.dll"
 $path=if($Assembly -eq 'server'){"$root/SPT_Runtime/SPTarkov.Server.Core.dll"}else{"$root/EscapeFromTarkov_Data/Managed/Assembly-CSharp.dll"}
 $a=[Mono.Cecil.AssemblyDefinition]::ReadAssembly($path)

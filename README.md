@@ -2,7 +2,7 @@
 
 <img src="crashsite-logo.png" width=300 alt="Escape from Tarkov: Crashsite">
 
-A hardcore survival location for **SPT4.1.6**, inspired by *The Division: Survival*.
+A hardcore survival location for **SPT 4.1.6**, inspired by *The Division: Survival*.
 
 Crashsite adds a separate, selectable raid into Customs: permanent night, abundant loot, all twelve bosses, and an incurable toxin that steadily damages you.
 
@@ -23,42 +23,31 @@ Extract a matching [Release](https://github.com/Decade-GitHub/crashsite/releases
 
 ```text
 BepInEx/plugins/Crashsite.Client.dll
-SPT_Runtime/user/mods/Crashsite.Server.dll
+SPT_Runtime/user/mods/Crashsite/Crashsite.Server.dll
 ```
 Fika is not currently supported.
 
 ## Building
 
-The supported build workflow uses **Windows, PowerShell, Visual Studio's Roslyn C# compiler, and an installed SPT 4.1.6**. The server also needs the .NET 10 and ASP.NET Core 10 shared runtimes required by SPT.
+Build on Windows with PowerShell, Visual Studio's Roslyn compiler, and an installed **SPT 4.1.6**. The server needs the .NET 10 and ASP.NET Core 10 shared runtimes required by SPT. The supplied scripts do not require a .NET SDK.
 
-Set your installation path before building:
+Set your SPT installation path and build both halves:
 
 ```powershell
 $env:SPT_ROOT = 'C:\Games\SPT'
-.\package.ps1
+.\src\server\build.ps1 -Configuration Release
+.\src\client\build.ps1 -Configuration Release
 ```
 
-This builds matching Debug and Release ZIPs under `dist/`. To build one variant:
+Use `-Configuration Debug` for diagnostic logging. Outputs are written to `src/server/bin/<Configuration>/net10.0/` and `src/client/bin/<Configuration>/`.
 
-```powershell
-.\package.ps1 -SptRoot 'D:\Games\SPT' -Configuration Release
-```
-
-### Local paths and project settings
-
-| File | Setting | Value |
+| Setting | Where | Value |
 | --- | --- | --- |
-| `src/Crashsite.Client/Crashsite.Client.csproj` | `SPT_ROOT` | Your SPT installation root. An environment variable supplies it; remove or replace the local fallback. |
-| `src/Crashsite.Server/Crashsite.Server.csproj` | `SptRuntimePath` | Your installation's `SPT_Runtime` directory. It is derived automatically from `SPT_ROOT` when set. |
-| Both `build.ps1` scripts | `SptRoot` | Your SPT root, supplied through `SPT_ROOT` or `-SptRoot`. Remove or replace the local fallback. |
-| Both `build.ps1` scripts | `CscPath` | Visual Studio's `MSBuild\Current\Bin\Roslyn\csc.exe`. Scripts try `vswhere` if their default path is unavailable. |
-| Server `build.ps1` | `DotnetRoot` | The .NET installation containing `shared/`. Defaults to `DOTNET_ROOT`, then `Program Files\dotnet`. |
+| `SPT_ROOT` / `-SptRoot` | Environment / build and test scripts | Your SPT installation root. |
+| `SptRuntimePath` | Server `.csproj` | Derived from `SPT_ROOT`; can be set explicitly to the installation's `SPT_Runtime` directory. |
+| `CSC_PATH` / `-CscPath` | Environment / build and test scripts | Optional path to Roslyn's `csc.exe`. Otherwise the scripts check PATH and discover Visual Studio through `vswhere`. |
+| `DOTNET_ROOT` / `-DotnetRoot` | Environment / server build and test scripts | Optional .NET installation root. Defaults to `Program Files\dotnet`. |
 
-If compiler discovery fails, set the compiler fallback in both build scripts before using `package.ps1`. Individual builds also accept explicit paths:
+The client `.csproj` reads `SPT_ROOT` from the environment. Keep the existing frameworks, assembly names, reference filenames, and `CRASHSITE_DEBUG` configuration. Both `.csproj` versions, the client's `PluginVersion`, and the server's `CrashsiteClientHandshake.Version` must match; this release uses **1.0.0**.
 
-```powershell
-.\src\Crashsite.Server\build.ps1 -SptRoot $env:SPT_ROOT -CscPath 'D:\Tools\Roslyn\csc.exe' -DotnetRoot 'C:\Program Files\dotnet'
-.\src\Crashsite.Client\build.ps1 -SptRoot $env:SPT_ROOT -CscPath 'D:\Tools\Roslyn\csc.exe'
-```
-
-Keep the existing target frameworks, assembly names, reference filenames, and `CRASHSITE_DEBUG` configuration. **Both** `.csproj` versions must match.
+Reference assemblies are read from your installation. Generated `bin/` and `obj/` files belong outside source control.

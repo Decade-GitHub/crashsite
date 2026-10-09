@@ -1,27 +1,45 @@
 param(
     [string] $SptRoot = $env:SPT_ROOT,
-    [string] $CscPath = '',
+    [string] $CscPath = $env:CSC_PATH,
     [ValidateSet('Debug', 'Release')]
     [string] $Configuration = 'Release'
 )
 
 if (-not $SptRoot) {
-    $SptRoot = 'SET_PATH_HERE'
+    throw 'Set SPT_ROOT or pass -SptRoot to an SPT 4.1.6 installation.'
 }
 
 if (-not $CscPath) {
-    $CscPath = 'C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\Roslyn\csc.exe'
-    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    if (-not (Test-Path -LiteralPath $CscPath -PathType Leaf) -and (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
-        $installPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
-        if ($installPath) {
-            $CscPath = Join-Path $installPath 'MSBuild\Current\Bin\Roslyn\csc.exe'
+    $compiler = Get-Command csc.exe -ErrorAction SilentlyContinue
+    if ($compiler) { $CscPath = $compiler.Source }
+    else {
+        $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+        if (Test-Path -LiteralPath $vswhere -PathType Leaf) {
+            $installPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+            if ($installPath) { $CscPath = Join-Path $installPath 'MSBuild\Current\Bin\Roslyn\csc.exe' }
         }
     }
+}
+if (-not $CscPath -or -not (Test-Path -LiteralPath $CscPath -PathType Leaf)) {
+    throw 'Set CSC_PATH or pass -CscPath to a Roslyn csc.exe compiler.'
 }
 
 $ErrorActionPreference = 'Stop'
 $source = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.cs' -File | ForEach-Object FullName)
+$projectFile = Join-Path $PSScriptRoot 'Crashsite.Client.csproj'
+$version = ([xml](Get-Content -LiteralPath $projectFile -Raw)).Project.PropertyGroup.Version |
+    Where-Object { $_ } | Select-Object -First 1
+if (-not $version) { throw 'Crashsite.Client.csproj has no <Version>.' }
+$generatedDir = Join-Path $PSScriptRoot "obj\build\$Configuration"
+New-Item -ItemType Directory -Force -Path $generatedDir | Out-Null
+$assemblyInfo = Join-Path $generatedDir 'AssemblyInfo.g.cs'
+@(
+    'using System.Reflection;'
+    "[assembly: AssemblyVersion(""$version.0"")]"
+    "[assembly: AssemblyFileVersion(""$version.0"")]"
+    "[assembly: AssemblyInformationalVersion(""$version"")]"
+) | Set-Content -LiteralPath $assemblyInfo -Encoding UTF8
+$source += $assemblyInfo
 $outputDir = Join-Path $PSScriptRoot "bin\$Configuration"
 $output = Join-Path $outputDir 'Crashsite.Client.dll'
 $references = @(

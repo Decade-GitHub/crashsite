@@ -14,13 +14,12 @@ using SPT.Common.Http;
 
 namespace Crashsite.Client
 {
-    // The server owns the location record. Client compatibility and inventory
-    // preparation are scoped to the separate Crashsite ID.
+
     [BepInPlugin("com.crashsite.m1.client", "Crashsite Client", PluginVersion)]
     public sealed partial class CrashsiteClientPlugin : BaseUnityPlugin
     {
-        // One version string for the BepInEx metadata and the server handshake.
-        private const string PluginVersion = "0.14.1";
+
+        private const string PluginVersion = "1.0.0";
         private const string CrashsiteId = "crashsite";
         private const string CustomsId = "bigmap";
         private const int MinimumPlayerLevel = 21;
@@ -28,13 +27,9 @@ namespace Crashsite.Client
         private const string HandshakeVersion = PluginVersion;
         private const string TransferRoute = "/crashsite/inventory/transfer";
         private const string TransferAckRoute = "/crashsite/inventory/ack";
-        // M4 (user decisions 2026-09-29): Crashsite's raid clock is frozen at one
-        // deep-night hour, and the map screen offers no time choice (like Labs).
+
         private static readonly TimeSpan CrashsiteNightTime = TimeSpan.FromHours(1);
-        // M7 (user decisions 2026-09-29): the Crashsite toxin is the game's
-        // "Unknown toxin" (Intoxication) at half its damage per tick, with its
-        // vanilla 10 s onset; the Immunity skill still reduces it; in-raid cures
-        // do not remove it.
+
         private const float CrashsiteToxinDamageScale = 0.5f;
         private Harmony _harmony;
         private static CrashsiteClientPlugin _instance;
@@ -42,10 +37,7 @@ namespace Crashsite.Client
         private static bool _invokeOriginalLocalGameMatching;
         private static bool _handshakeAccepted;
         private static bool _abpsCapLogged;
-        // Set when the client inventory may no longer match the server profile (for
-        // example, the transfer response was lost after local staging). Every local
-        // raid is blocked until the game restarts and reloads the profile, because a
-        // raid-end save could otherwise lose or duplicate the staged item trees.
+
         private static string _inventoryUntrustedReason;
         private static PropertyInfo _gameWorldInstanceProperty;
         private static bool _nightClockPatchInstalled;
@@ -59,7 +51,7 @@ namespace Crashsite.Client
         private static bool _orbitDormancyLogged;
         private static bool _sainLocationLogged;
         private static MethodInfo _sainSetLocation;
-        // M7 state: the tracked Crashsite toxin instance on the local player.
+
         private static object _crashsiteToxin;
         private static object _crashsiteToxinHealth;
         private static bool _toxinCureBlockLogged;
@@ -69,11 +61,10 @@ namespace Crashsite.Client
         private static object _thoraxBodyParts;
         private float _nextToxinCheck;
         private static FieldInfo _sainFoundLocation;
-        // M9/M10 state. Neither blocks readying if its patch fails; the raid then
-        // simply runs with normal weather or the menu's Scav wars setting.
+
         private static bool _halloweenWeatherPatchReady;
         private static bool _scavWarsPatchInstalled;
-        // M9: enough 10-minute weather nodes to cover any raid length (6 hours).
+
         private const int CrashsiteWeatherNodeSeconds = 600;
         private const int CrashsiteWeatherNodeCount = 36;
 
@@ -99,10 +90,6 @@ namespace Crashsite.Client
             var selectionType = FindType("EFT.UI.Matchmaker.MatchMakerSelectionLocationScreen");
             var applicationType = FindType("EFT.TarkovApplication");
 
-            // M4 (v0.4.1): Crashsite is deliberately NOT added to
-            // Location.NightTimeAllowedLocations. Like Labs, the selection screen
-            // then closes its time panel and readiness normalises the slot, which
-            // no longer matters because the raid clock is frozen at night.
             Patch(selectionType, "OnLocationSelected", null,
                 nameof(OnLocationSelectedPostfix));
             Patch(FindType("EFT.UI.LocationButton"), "Show", null, nameof(CrashsiteLocationButtonPostfix));
@@ -117,37 +104,25 @@ namespace Crashsite.Client
             Patch(applicationType, "ComebackToMainMenu", null,
                 nameof(ComebackToMainMenuPostfix));
 
-            // M4: EFT.LocalGame derives from BaseLocalGame<EftGamePlayerOwner>, whose
-            // InitWeather builds the raid's GameDateTime (shared with GameWorld and
-            // the TOD sky). A missing patch blocks Crashsite ready instead of
-            // letting a daytime raid start.
             var localGameType = FindType("EFT.LocalGame");
             _nightClockPatchInstalled = Patch(localGameType?.BaseType, "InitWeather", null,
                 nameof(InitWeatherPostfix));
             Patch(FindType("EFT.UI.Matchmaker.LocationConditionsPanel"), "Set", null,
                 nameof(LocationConditionsPanelSetPostfix));
 
-            // M9: the Halloween weather is applied from the same InitWeather postfix
-            // as the M4 clock; this only checks that the game members it needs exist.
             _halloweenWeatherPatchReady = _nightClockPatchInstalled && CheckHalloweenWeatherMembers();
 
-            // M11: unlock keyed doors, car trunks and containers once the raid starts.
             if (!Patch(FindType("EFT.GameWorld"), "OnGameStarted", null, nameof(UnlockCrashsiteKeyedObjects)))
             {
                 LogError("M11 keyless-doors patch was not installed; Crashsite doors keep their locks.");
             }
 
-            // M10: LocalGame passes the raid settings' IsScavWars to
-            // BotsController.Init as its freeForAll argument.
             _scavWarsPatchInstalled = Patch(FindType("EFT.BotsController"), "Init", nameof(ForceCrashsiteScavWarsPrefix), null);
             if (!_scavWarsPatchInstalled)
             {
                 LogError("M10 Scav War patch was not installed; Crashsite uses the raid-settings option.");
             }
 
-            // M7: apply the toxin when the raid starts, keep cures from removing it,
-            // and halve its per-tick damage. All three must install, or Crashsite
-            // ready is blocked (see LocalGameMatchingPrefix).
             _intoxicationType = FindType("EFT.HealthSystem.ActiveHealthController+Intoxication");
             var effectType = FindType("EFT.HealthSystem.ActiveHealthController+Effect");
             _toxinPatchesInstalled =
@@ -157,9 +132,6 @@ namespace Crashsite.Client
                 Patch(_intoxicationType, "Started", nameof(ScaleCrashsiteToxinPrefix), nameof(ScaleCrashsiteToxinPostfix)) &
                 InstallThoraxOnlyToxin();
 
-            // ABPS 2.1.0's client postfix assigns a zero bot cap to any map ID
-            // outside its fixed list. Keep the game's original cap for this
-            // Customs-scene clone, without changing ABPS on any other map.
             TryPatchAbpsCap();
             TryPatchOrbitWaypoints();
             TryPatchM6BotModCompatibility();
@@ -172,7 +144,7 @@ namespace Crashsite.Client
 
         private void Start()
         {
-            // A later-loaded BepInEx plugin can appear after our Awake.
+
             TryPatchAbpsCap();
             TryPatchOrbitWaypoints();
             TryPatchM6BotModCompatibility();
@@ -279,7 +251,7 @@ namespace Crashsite.Client
                 return;
             try
             {
-                // Prepare everything before replacing arguments; a failure leaves the original call intact.
+
                 var scopedConfig = CloneOrbitCustomsConfig(__2);
                 __1 = CustomsId;
                 __2 = scopedConfig;
@@ -318,7 +290,7 @@ namespace Crashsite.Client
             }
             scopedZones[CustomsId] = scopedBundle;
             zoneField.SetValue(scopedConfig, scopedZones);
-            // MapGeometries is read by the constructor, never overridden; keep that read-only source.
+
             return scopedConfig;
         }
 
@@ -435,8 +407,7 @@ namespace Crashsite.Client
             {
                 if (_gameWorldInstanceProperty == null)
                 {
-                    // Resolve Singleton<GameWorld>.Instance once instead of scanning
-                    // every loaded assembly on each ABPS callback.
+
                     var gameWorldType = FindOptionalType("EFT.GameWorld");
                     var singletonType = FindOptionalType("Comfort.Common.Singleton`1");
                     if (gameWorldType == null || singletonType == null)
@@ -473,10 +444,6 @@ namespace Crashsite.Client
             }
         }
 
-        // ---- M7: incurable Crashsite toxin ----
-
-        // GameWorld.OnGameStarted has no overrides in 0.16.9 and runs once
-        // MainPlayer exists.
         private static void ApplyCrashsiteToxinOnGameStarted(object __instance)
         {
             try
@@ -505,12 +472,6 @@ namespace Crashsite.Client
             }
         }
 
-        // M11 (user decision 2026-09-29): players cannot bring keys into Crashsite,
-        // so every locked object that a key or keycard would open starts unlocked
-        // (shut, not open): doors, keycard doors, car trunks and locked containers.
-        // Only objects with a KeyId are touched. Switches, switch-driven doors
-        // (DoorSwitch) and keyless scripted locks keep their state, so power, extract
-        // and quest mechanics behave as on Customs.
         private static void UnlockCrashsiteKeyedObjects(object __instance)
         {
             try
@@ -526,8 +487,7 @@ namespace Crashsite.Client
                 var doorSwitchType = FindType("EFT.Interactive.DoorSwitch");
                 var enumerate = AccessTools.Method(__instance.GetType(), "WorldInteractiveObjects", Type.EmptyTypes);
                 var setState = AccessTools.Method(objectType, "SetDoorState", new[] { stateType, typeof(bool) });
-                // Read DoorState through the base property; Door re-declares it, so a
-                // by-name lookup on the concrete type could be ambiguous.
+
                 var doorState = objectType?.GetProperty("DoorState", BindingFlags.Instance | BindingFlags.Public,
                     null, stateType, Type.EmptyTypes, null);
                 if (objectType == null || stateType == null || enumerate == null || setState == null || doorState == null)
@@ -539,9 +499,7 @@ namespace Crashsite.Client
                 var shut = Enum.Parse(stateType, "Shut");
                 var unlocked = new Dictionary<string, int>();
                 var skipped = 0;
-                // In the offline game GameWorld has no network World component, so
-                // GameWorld.WorldInteractiveObjects() throws (v0.9.0 finding). Every
-                // lockable object is a scene MonoBehaviour, so ask Unity for them.
+
                 IEnumerable<object> candidates;
                 if (ReadMember(__instance, "World") != null)
                 {
@@ -590,7 +548,6 @@ namespace Crashsite.Client
             }
         }
 
-        // M13: keep vanilla scheduling; only the tracked instance's damage list changes.
         private bool InstallThoraxOnlyToxin()
         {
             try
@@ -634,7 +591,7 @@ namespace Crashsite.Client
                     yield return instruction;
                     continue;
                 }
-                // Keep branch targets and exception boundaries on the replacement's first instruction.
+
                 instruction.opcode = OpCodes.Ldarg_0;
                 instruction.operand = null;
                 yield return instruction;
@@ -648,8 +605,6 @@ namespace Crashsite.Client
             _crashsiteToxin != null && ReferenceEquals(effect, _crashsiteToxin)
                 ? _thoraxBodyParts : _realBodyPartsField.GetValue(null);
 
-        // ActiveHealthController.AddEffect<Intoxication>(DefaultBodyPart, null...):
-        // the vanilla onset delay (10 s) and an infinite work time.
         private static void AddCrashsiteToxin(string reason)
         {
             var health = _crashsiteToxinHealth;
@@ -674,10 +629,6 @@ namespace Crashsite.Client
                                       (_crashsiteToxin == null ? "<not created>" : "state " + ReadString(_crashsiteToxin, "State")) + ".");
         }
 
-        // Every in-raid cure path in 0.16.9 (med items via MedEffect.Residue,
-        // stimulator buffs via RemoveIntoxication, RemoveNegativeEffects) ends in
-        // Effect.ForceResidue; RemoveEffect uses ForceRemove. Only the tracked
-        // Crashsite instance is protected, so toxins elsewhere cure normally.
         private static bool BlockCrashsiteToxinCure(object __instance)
         {
             if (_crashsiteToxin == null || !ReferenceEquals(__instance, _crashsiteToxin))
@@ -694,9 +645,6 @@ namespace Crashsite.Client
             return false;
         }
 
-        // Intoxication.Started reads the shared IntoxicationSettings.DamageHealth,
-        // applies the Immunity skill buff, and sets the tick damage. Halve the
-        // setting only while the Crashsite instance starts, then restore it.
         private static void ScaleCrashsiteToxinPrefix(object __instance, ref float __state)
         {
             __state = float.NaN;
@@ -730,8 +678,6 @@ namespace Crashsite.Client
                                       "x vanilla damage per tick (vanilla setting " + __state + ", Immunity skill applied).");
         }
 
-        // Safety net for mods or code paths that remove effects without
-        // ForceResidue/ForceRemove: re-apply while the player is alive.
         private void Update()
         {
             if (_crashsiteToxinHealth == null || UnityEngine.Time.time < _nextToxinCheck)
@@ -748,7 +694,7 @@ namespace Crashsite.Client
                 }
 
                 var state = _crashsiteToxin == null ? 0 : Convert.ToInt32(ReadMember(_crashsiteToxin, "State"));
-                // EEffectState: None 0, Added 1, Started 2, Residued 3, Removed 4, Paused 5.
+
                 if (_crashsiteToxin == null || state == 0 || state == 3 || state == 4)
                 {
                     AddCrashsiteToxin("re-applied after removal");
@@ -761,14 +707,9 @@ namespace Crashsite.Client
             }
         }
 
-        // ---- M6 bot-mod compatibility (each gated on the exact inspected version) ----
-
         private void TryPatchM6BotModCompatibility()
         {
-            // ABPS 1.0.0.0 client: its progressive/regressive boss tracking records
-            // every tracked boss that spawns, on any map, and lowers that boss's
-            // chance on the next raid. Crashsite spawns all 12 bosses every raid,
-            // which would otherwise lower their chances on the regular maps.
+
             if (!_abpsBossTrackingPatchInstalled)
             {
                 var tracking = FindOptionalType("BotPlacementSystemClient.Patches.BossProgressiveRegressivePatch");
@@ -779,10 +720,6 @@ namespace Crashsite.Client
                 }
             }
 
-            // ORBIT 2.0.0.42986 / 2.1.1.612: with the user's config it puts Goons and cultists
-            // (not other bosses) to sleep far from the player and can kill them in
-            // simulated "ghost fights". On Crashsite those roster bosses stay awake,
-            // like ORBIT already keeps the other bosses.
             if (!_orbitDormancyPatchInstalled)
             {
                 var dormancy = FindOptionalType("Orbit.Systems.DormancySystem");
@@ -798,9 +735,6 @@ namespace Crashsite.Client
                 }
             }
 
-            // SAIN 4.5.1.0: LocationClass.parseLocation knows only vanilla IDs, so
-            // Crashsite ran with ELocation.None and SAIN logged "No settings" each
-            // frame. Use SAIN's Customs settings (ELocation.Customs = 3) instead.
             if (!_sainLocationPatchInstalled)
             {
                 var location = FindOptionalType("SAIN.Components.LocationClass");
@@ -813,8 +747,6 @@ namespace Crashsite.Client
                 }
             }
 
-            // Waypoints 1.9.0.0: loads "<locationId>-navmesh.bundle", so Crashsite
-            // fell back to the vanilla navmesh while Customs used the custom one.
             if (!_waypointsNavmeshPatchInstalled)
             {
                 var waypoints = FindOptionalType("DrakiaXYZ.Waypoints.Patches.WaypointPatch");
@@ -933,7 +865,6 @@ namespace Crashsite.Client
                     return;
                 }
 
-                // SAIN.Preset.Shared.Enums.ELocation.Customs = 3 in SAIN 4.5.1.
                 var customs = Enum.ToObject(current.GetType(), 3);
                 _sainSetLocation.Invoke(__instance, new[] { customs });
                 _sainFoundLocation?.SetValue(__instance, true);
@@ -949,8 +880,6 @@ namespace Crashsite.Client
             }
         }
 
-        // Mirrors Waypoints 1.9.0 InjectNavmesh with Customs' bundle. Any failure
-        // falls through to the original method (vanilla navmesh, as before).
         private static bool InjectCustomsNavmeshForCrashsite(object __0)
         {
             try
@@ -1055,7 +984,7 @@ namespace Crashsite.Client
         {
             if (!string.Equals(ReadString(__0, "Id"), CrashsiteId, StringComparison.OrdinalIgnoreCase))
                 return;
-            // M15: reuse the prefab's Lab border without changing IsSecret/event semantics.
+
             var border = ReadMember(__instance, "_secretBorder") as UnityEngine.Component;
             if (border != null)
                 border.gameObject.SetActive(true);
@@ -1207,9 +1136,7 @@ namespace Crashsite.Client
 
             if (_inventoryUntrustedReason != null)
             {
-                // Applies to every map, not only Crashsite: InRaidHelper.SetInventory
-                // replaces server equipment from the client's post-raid profile, so a
-                // raid with an unverified client inventory can drop or duplicate items.
+
                 NotifyPlayer(_inventoryUntrustedReason);
                 __result = Task.FromException(new InvalidOperationException(_inventoryUntrustedReason));
                 return false;
@@ -1273,9 +1200,7 @@ namespace Crashsite.Client
         private static async Task TransferCrashsiteInventoryThenStartAsync(object application, object[] matchingArgs)
         {
             var moves = new List<ClientMove>();
-            // True while the local inventory may differ from the server profile in a
-            // way this method cannot undo. A failure in that window blocks all raids
-            // until restart instead of guessing which side is right.
+
             var stateUnknown = false;
             var matchingStarted = false;
             try
@@ -1325,8 +1250,7 @@ namespace Crashsite.Client
                 {
                     try
                     {
-                        // The first request may have reached the server before the connection failed.
-                        // Reuse the same operation ID so the server can return its saved result.
+
                         responseText = await RequestHandler.PostJsonAsync(TransferRoute, requestBody);
                     }
                     catch (Exception retryFailure)
@@ -1343,8 +1267,7 @@ namespace Crashsite.Client
                 var accepted = (bool?)responseData?["Accepted"] ?? (bool?)responseData?["accepted"] ?? false;
                 if (!accepted)
                 {
-                    // Every server rejection is returned before the profile is changed,
-                    // so restoring the local staging brings both sides back in line.
+
                     RollbackClientMoves(moves);
                     stateUnknown = false;
                     var reason = (string)responseData?["Reason"] ?? (string)responseData?["reason"] ??
@@ -1373,10 +1296,6 @@ namespace Crashsite.Client
                         "The server response did not match this Crashsite inventory transfer.");
                 }
 
-                // The server placed every tree with its own stash search. Move any
-                // client-side placement that differs onto the server's cells so a
-                // cancelled ready does not leave a stash view that disagrees with the
-                // profile (later client moves could otherwise overlap on the server).
                 var realigned = AlignClientStashWithServer(stashGrid, roots, serverRoots);
                 stateUnknown = false;
 
@@ -1439,8 +1358,6 @@ namespace Crashsite.Client
             }
         }
 
-        // EFT's matching error screen only says the matching was aborted, so the
-        // actual Crashsite reason is also shown as an in-game warning notification.
         private static void NotifyPlayer(string message)
         {
             try
@@ -1535,10 +1452,6 @@ namespace Crashsite.Client
                 .ToList();
         }
 
-        // Secure Container and Pockets stay equipped; the item trees in their grids
-        // move. In 0.16.9 the Special Inventory slots (SpecialSlot1-3) are slots on
-        // the Pockets item (EquipmentSlot has no SpecialSlot entry), so they stay.
-        // Reading the container directly replaces v0.3.0's scan of every player item.
         private static void AddContainedClientRoots(IDictionary<string, object> roots, object containerItem)
         {
             if (ReadMember(containerItem, "Grids") is IEnumerable grids)
@@ -1594,14 +1507,12 @@ namespace Crashsite.Client
             roots.Add(id, item);
         }
 
-        // Equipment roots kept with all of their contents.
         private static bool IsRetainedClientSlot(string slotId) =>
             string.Equals(slotId, "Scabbard", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(slotId, "Dogtag", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(slotId, "ArmBand", StringComparison.OrdinalIgnoreCase) ||
             IsSpecialSlot(slotId);
 
-        // Equipment roots that stay equipped while their grid contents move.
         private static bool IsContentsOnlyClientSlot(string slotId) =>
             string.Equals(slotId, "SecuredContainer", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(slotId, "Pockets", StringComparison.OrdinalIgnoreCase);
@@ -1653,7 +1564,6 @@ namespace Crashsite.Client
             return TryInvokeAddressAction(findArguments[1], "Add", item, out _) && IsInContainer(item, stashGrid);
         }
 
-        // Restore by container membership rather than trusting CurrentAddress alone.
         private static void RollbackClientMoves(IReadOnlyList<ClientMove> moves)
         {
             for (var index = moves.Count - 1; index >= 0; index--)
@@ -1708,8 +1618,6 @@ namespace Crashsite.Client
                 return 0;
             }
 
-            // Free all misplaced cells first: a server cell may be where the client
-            // put a different staged tree.
             foreach (var entry in misplaced)
             {
                 InvokeAddressAction(ReadMember(entry.Key.Item, "CurrentAddress"), "Remove", entry.Key.Item);
@@ -1730,8 +1638,6 @@ namespace Crashsite.Client
                     continue;
                 }
 
-                // Client and server disagree about this tree's size or the stash
-                // occupancy. Keep the tree in stash; the view matches after a reload.
                 LogWarning(
                     "Crashsite M3 could not use the server stash cell for " + entry.Key.Id +
                     "; it stays in the first free client cell until the profile reloads.");
@@ -1760,8 +1666,6 @@ namespace Crashsite.Client
                    Convert.ToInt32(ReadMember(location, "r")) == (cell.Rotated ? 1 : 0);
         }
 
-        // Grid.CreateItemAddress(new LocationInGrid(x, y, ItemRotation)) for the
-        // server's cell; ItemRotation.Horizontal = 0, Vertical = 1 in 0.16.9.
         private static object CreateStashAddress(object stashGrid, StashCell cell)
         {
             var gameAssembly = stashGrid.GetType().Assembly;
@@ -1824,8 +1728,6 @@ namespace Crashsite.Client
             }
         }
 
-        // ItemAddress.Add/Remove(Item, bool simulate) return an OperationResult; read
-        // its Failed/Error instead of ignoring it as v0.3.0 did.
         private static bool TryInvokeAddressAction(object address, string methodName, object item, out string error)
         {
             if (address == null)
@@ -1901,11 +1803,6 @@ namespace Crashsite.Client
             public bool Rotated { get; }
         }
 
-        // M4: runs after BaseLocalGame.InitWeather (and again if a weather event
-        // re-runs it). Whatever time source InitWeather used (backend slot, random
-        // time, or special map time), Crashsite's GameDateTime is reset to the
-        // fixed night hour with a zero time factor, then locked so non-forced
-        // resets cannot move it. GameWorld and the sky hold this same object.
         private static void InitWeatherPostfix(object __instance)
         {
             try
@@ -1945,8 +1842,6 @@ namespace Crashsite.Client
                 LogError("M4 Crashsite night clock failed: " + ex);
             }
 
-            // M9 runs after the clock in its own try block, so a weather failure never
-            // undoes the night. (Other maps already returned inside the try block.)
             if (string.Equals(ReadString(ReadMember(__instance, "Location"), "Id"), CrashsiteId,
                               StringComparison.OrdinalIgnoreCase))
             {
@@ -1954,13 +1849,6 @@ namespace Crashsite.Client
             }
         }
 
-        // M9 (user decision 2026-09-29): Crashsite uses the game's Halloween event
-        // weather. 0.16.9 builds it with WeatherNode.GetHalloweenWeatherNode
-        // (cloudness 1.3, scattering fog 0.018, no wind or rain, 20 °C, 760 mmHg).
-        // InitWeather has just given WeatherController a 12-node curve (backend or
-        // random weather); it is replaced with a flat Halloween curve long enough for
-        // any raid. The node times come from the game's own GetRandomTestWeatherNodes,
-        // so they use the same clock basis as the curve InitWeather built.
         private static bool CheckHalloweenWeatherMembers()
         {
             var nodeType = FindType("EFT.Weather.WeatherNode");
@@ -2025,10 +1913,6 @@ namespace Crashsite.Client
             }
         }
 
-        // M10 (user decision 2026-09-29): Scav War is always on for Crashsite.
-        // 0.16.9's LocalGame bot setup (vmethod_1) calls BotsController.Init with the
-        // raid settings' IsScavWars as the freeForAll argument; this is the same flag
-        // the raid-settings "Scav wars" checkbox sets. Other maps keep that choice.
         private static void ForceCrashsiteScavWarsPrefix(object botGame, ref bool freeForAll)
         {
             try
@@ -2050,9 +1934,6 @@ namespace Crashsite.Client
             }
         }
 
-        // M4: the selection screen hides the time panel for Crashsite (as for Labs),
-        // but the ready/accept screen and raid invites still show it. There it
-        // displays Crashsite's fixed night time instead of the live slot times.
         private static void LocationConditionsPanelSetPostfix(object __instance, object __1)
         {
             try
@@ -2111,7 +1992,7 @@ namespace Crashsite.Client
                 }
 
                 _awaitingCrashsiteReturn = string.Equals(id, CrashsiteId, StringComparison.OrdinalIgnoreCase);
-                // M7: stop tracking; the server strips the toxin from the saved profile.
+
                 _crashsiteToxin = null;
                 _crashsiteToxinHealth = null;
                 DebugInfo("M1 OnGameEnd location Id=" + id +
@@ -2230,6 +2111,4 @@ namespace Crashsite.Client
         }
     }
 }
-
-
 

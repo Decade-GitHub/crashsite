@@ -18,7 +18,6 @@ using LocationPath = SPTarkov.Server.Core.Models.Eft.Common.Tables.Path;
 
 namespace Crashsite.Server;
 
-// Register the independent location and keep its shared Customs scene narrowly scoped.
 [Injectable(TypePriority = OnLoadOrder.PostLoad + 1)]
 public sealed class CrashsiteLocationProof(
     LocationTable locations,
@@ -34,18 +33,9 @@ public sealed class CrashsiteLocationProof(
     public const string LocationMongoId = "66f1c5a00000000000000001";
     public const int MinimumPlayerLevel = 21;
 
-    // M5 (user decision 2026-09-29, revised after v0.7.0 testing): Crashsite loot
-    // density matches SVM's loot sliders at maximum for both loose loot and
-    // containers. SVM writes its slider values into these dictionaries unscaled
-    // (Sections.Loot.LootValues), and the user's own preset tops out at 100
-    // (Labs). Before v0.6.0 Crashsite copied the SVM Customs values (60/60), which
-    // is the "filled to the brim" loot the user first saw; v0.6.0's 7.5/3 was the
-    // regression. These are absolute values and do not depend on SVM being installed.
     public const double LooseLootMultiplier = 100.0;
     public const double StaticLootMultiplier = 100.0;
 
-    // M15: below Customs (550,460), left of Interchange (660,360).
-    // The client normalizes coordinates to Unity anchors, so lower Y is lower on screen.
     public const double IconX = 550;
     public const double IconY = 240;
 
@@ -67,7 +57,7 @@ public sealed class CrashsiteLocationProof(
             catalog.Values.Any(location => location?.Base?.IdField == newId))
         {
             throw new InvalidOperationException(CrashsiteLog.PublicMessage(
-                $"Crashsite M1: location key or ID already registered ({LocationKey}, {LocationMongoId})."));
+                $"Crashsite: location key or ID already registered ({LocationKey}, {LocationMongoId})."));
         }
 
         if (customsBase.Id != "bigmap" ||
@@ -75,7 +65,7 @@ public sealed class CrashsiteLocationProof(
             customsBase.Scene.Rcid != "bigmap.scenespreset.asset")
         {
             throw new InvalidOperationException(CrashsiteLog.PublicMessage(
-                "Crashsite M1: the loaded Customs record does not match SPT 4.1.6; refusing to register a map with an unverified scene."));
+                "Crashsite: the loaded Customs record does not match SPT 4.1.6; refusing to register a map with an unverified scene."));
         }
 
         if (customs.LooseLoot is null || customs.StaticLoot is null || customs.StaticContainers is null)
@@ -83,9 +73,6 @@ public sealed class CrashsiteLocationProof(
             throw new InvalidOperationException(CrashsiteLog.PublicMessage("Crashsite M1: Customs loot data is incomplete."));
         }
 
-        // 4.1.6's loot generator falls back to a "default" key for unknown maps,
-        // but the shipped config has no such key, so Crashsite needs its own entries.
-        // Customs' current values are only logged for comparison.
         var customsLoose = locationConfig.LooseLootMultiplier.TryGetValue("bigmap", out var loose) ? loose : double.NaN;
         var customsStatic = locationConfig.StaticLootMultiplier.TryGetValue("bigmap", out var stat) ? stat : double.NaN;
 
@@ -95,7 +82,6 @@ public sealed class CrashsiteLocationProof(
             throw new InvalidOperationException(CrashsiteLog.PublicMessage("Crashsite M1: a Crashsite loot multiplier is already registered."));
         }
 
-        // Logged for comparison only; Crashsite never randomises containers (M5).
         var customsRandomisesContainers = locationConfig.ContainerRandomisationSettings.Enabled &&
             locationConfig.ContainerRandomisationSettings.Maps.ContainsKey("bigmap");
         if (!locationConfig.LootMaxSpawnLimits.TryGetValue("bigmap", out var maxSpawnLimits))
@@ -117,18 +103,14 @@ public sealed class CrashsiteLocationProof(
         crashsiteBase.Description = FlavorText;
         crashsiteBase.IconX = IconX;
         crashsiteBase.IconY = IconY;
-        // M8: no banners. The client's LocationInfoPanel shows its default image
-        // when Banners is empty (not null), which is the generic image Terminal uses.
+
         crashsiteBase.Banners = new List<Banner>();
         crashsiteBase.Enabled = true;
         crashsiteBase.RequiredPlayerLevelMin = MinimumPlayerLevel;
-        // M1 tests the PMC route only. Scav raid-time settings index map IDs directly.
+
         crashsiteBase.DisabledForScav = true;
         crashsiteBase.Loot = [];
 
-        // The original scene and its spawn/extract geometry are retained by the base clone.
-        // Separate lazy wrappers give Crashsite its own transformer lists (for M5) while
-        // reading Customs' data, including any transformers SPT/mods added to Customs.
         var crashsiteLooseLoot = DeriveLootData(customs.LooseLoot, cloner, out var looseLootShared);
         var crashsiteStaticLoot = DeriveLootData(customs.StaticLoot, cloner, out var staticLootShared);
         var crashsiteStaticContainers = DeriveLootData(customs.StaticContainers, cloner, out var staticContainersShared);
@@ -143,7 +125,6 @@ public sealed class CrashsiteLocationProof(
             AllExtracts = cloner.Clone(customs.AllExtracts)!,
         };
 
-        // Add the new vertex without changing any of the original graph edges.
         var paths = locations.Base.Paths
             ?? throw new InvalidOperationException(CrashsiteLog.PublicMessage("Crashsite M1: location graph has no paths list."));
         if (paths.Any(path => path.Source == LocationMongoId || path.Destination == LocationMongoId))
@@ -154,9 +135,7 @@ public sealed class CrashsiteLocationProof(
         locationConfig.StaticLootMultiplier.Add(LocationKey, StaticLootMultiplier);
         locationConfig.LooseLootMultiplier.Add(LocationKey, LooseLootMultiplier);
         CopyCustomsBotSettings();
-        // M5: no ContainerRandomisationSettings.Maps entry. SPT 4.1.6
-        // LocationRandomisationEnabled(id) is Enabled && Maps.ContainsKey(id), so a
-        // missing key spawns every static container on the map, like SVM's AllContainers.
+
         locationConfig.LootMaxSpawnLimits.Add(LocationKey, cloner.Clone(maxSpawnLimits)!);
         catalog.Add(LocationKey, crashsite);
         paths.Add(new LocationPath
@@ -166,8 +145,6 @@ public sealed class CrashsiteLocationProof(
             Event = false,
         });
 
-        // EFT's map label and info-panel text use the Mongo ID locale keys, independent
-        // of Base.Name/Description. Register the English text in every loaded locale.
         foreach (var locale in locales.Global.Values)
         {
             locale.AddTransformer(strings =>
@@ -196,7 +173,7 @@ public sealed class CrashsiteLocationProof(
         OptionalBotModCompatibility.Install(logger);
         logger.Success("Crashsite loaded.");
 
-        CrashsiteLog.DebugSuccess(logger, 
+        CrashsiteLog.DebugSuccess(logger,
             $"Crashsite M1: registered {LocationKey} ({LocationMongoId}); scene={crashsiteBase.Scene?.Path}/{crashsiteBase.Scene?.Rcid}; " +
             $"exits={crashsiteBase.Exits.Count()}; M5 staticLootMultiplier={StaticLootMultiplier} (Customs now {customsStatic}); " +
             $"M5 looseLootMultiplier={LooseLootMultiplier} (Customs now {customsLoose}); allContainers=true (Customs randomised={customsRandomisesContainers}); " +
@@ -209,10 +186,6 @@ public sealed class CrashsiteLocationProof(
         return Task.CompletedTask;
     }
 
-    // SPT's per-map bot settings are keyed by location ID. Without entries Crashsite
-    // got the "default" bot cap (18, with a warning) instead of Customs' (26).
-    // Copy Customs' values so Crashsite's normal population matches Customs;
-    // the M6 bosses ignore the cap (IgnoreMaxBots).
     private void CopyCustomsBotSettings()
     {
         if (botConfig.MaxBotCap.TryGetValue("bigmap", out var cap))
@@ -231,13 +204,6 @@ public sealed class CrashsiteLocationProof(
         }
     }
 
-    // In SPT 4.1.6 the location loot LazyLoads are created by ImporterUtil with
-    // cacheValue=false (LooseLoot, StaticContainerDetails and the static-loot
-    // dictionary carry no [CacheLazyLoad]), so every Value read deserializes a new
-    // object graph from disk and applies Customs' transformers. That graph is already
-    // independent of Customs, and v0.1.x-0.3.0 deep-cloned it again on every raid.
-    // Keep the clone only if the source is caching (e.g. replaced by another mod),
-    // where the returned instance would otherwise be shared with Customs.
     private static LazyLoad<T> DeriveLootData<T>(LazyLoad<T> source, ICloner cloner, out bool sharesFreshSource)
     {
         sharesFreshSource = typeof(LazyLoad<T>)
@@ -249,7 +215,6 @@ public sealed class CrashsiteLocationProof(
     }
 }
 
-// Diagnostics are limited to Crashsite and do not alter normal raid arguments or results.
 [HarmonyPatch]
 internal static class CrashsiteRaidDiagnostics
 {
@@ -302,8 +267,6 @@ internal static class CrashsiteRaidDiagnostics
                 throw new InvalidOperationException(CrashsiteLog.PublicMessage(message));
             }
 
-            // M5: re-assert Crashsite's own multipliers right before loot generation,
-            // in case another mod rewrote the location config after startup.
             if (_locationConfig is not null)
             {
                 _locationConfig.LooseLootMultiplier[CrashsiteLocationProof.LocationKey] = CrashsiteLocationProof.LooseLootMultiplier;
@@ -316,7 +279,6 @@ internal static class CrashsiteRaidDiagnostics
         }
     }
 
-    // M17: announce initialization only after the server start task succeeds.
     [HarmonyPostfix]
     [HarmonyPatch(typeof(LocationLifecycleService), nameof(LocationLifecycleService.StartLocalRaidAsync))]
     private static void ReportInitialization(MongoId sessionId, StartLocalRaidRequestData request, CrashsiteStarterGrant? __state, ref Task<StartLocalRaidResponseData> __result)
@@ -333,10 +295,6 @@ internal static class CrashsiteRaidDiagnostics
         return response;
     }
 
-    // M4: Crashsite is always night; the matching client freezes its raid clock at
-    // 01:00. SPT asks this helper for the raid configuration's IsNightRaid flag
-    // (bot flashlight/NVG state) and night bot equipment. Other maps keep SPT's
-    // time-based answer.
     [HarmonyPostfix]
     [HarmonyPatch(typeof(WeatherHelper), nameof(WeatherHelper.IsNightTime))]
     private static void CrashsiteIsAlwaysNight(string mapLocation, ref bool __result)
@@ -358,23 +316,17 @@ internal static class CrashsiteRaidDiagnostics
     {
         if (IsCrashsite(name))
         {
-            // M6: applied to the per-raid clone sent to the client, after SPT's own
-            // wave generation, so every raid gets the full roster.
+
             var bossWaves = CrashsiteBossRoster.Apply(__result);
             CrashsiteLog.DebugInfo(_logger, $"Crashsite M6 boss roster applied: {bossWaves} boss waves (chance 100, forced), " +
                           $"total boss-spawn entries {__result.BossLocationSpawn?.Count ?? 0}.");
-            CrashsiteLog.DebugInfo(_logger, 
+            CrashsiteLog.DebugInfo(_logger,
                 $"Crashsite M1 generated: id={__result.Id}, mongoId={__result.IdField}, " +
                 $"scene={__result.Scene?.Path}/{__result.Scene?.Rcid}, exits={__result.Exits.Count()}, " +
                 $"lootPoints={__result.Loot?.Count() ?? 0}.");
         }
     }
 
-    // M7: the Crashsite toxin is raid-only. The client reports its effects in the
-    // post-raid profile, and SPT's HandlePostRaidPmc would copy them into the saved
-    // profile, where the toxin would keep ticking out of raid and follow the player
-    // into later raids. On a Crashsite raid the only toxin is the Crashsite one, so
-    // strip intoxication effects from the reported health before SPT processes it.
     [HarmonyPrefix]
     [HarmonyPatch(typeof(LocationLifecycleService), nameof(LocationLifecycleService.EndLocalRaidAsync))]
     private static void StripCrashsiteToxin(EndLocalRaidRequestData request)
@@ -412,7 +364,7 @@ internal static class CrashsiteRaidDiagnostics
             return;
         }
 
-        CrashsiteLog.DebugInfo(_logger, 
+        CrashsiteLog.DebugInfo(_logger,
             $"Crashsite M1 end request: serverId={request.ServerId}, result={request.Results?.Result}, " +
             $"exit={request.Results?.ExitName}.");
         __result = LogCompletionAsync(__result, request.ServerId, sessionId);
@@ -439,6 +391,4 @@ internal static class CrashsiteRaidDiagnostics
     private static bool IsCrashsiteServerId(string? serverId) =>
         serverId?.StartsWith(CrashsiteLocationProof.LocationKey + ".", StringComparison.OrdinalIgnoreCase) == true;
 }
-
-
 

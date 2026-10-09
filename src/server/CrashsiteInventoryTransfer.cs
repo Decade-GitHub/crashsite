@@ -144,7 +144,7 @@ public sealed class CrashsiteInventoryTransferCallback(
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // Check before replaying cached success or staging/saving any profile changes.
+
             var accessRejection = CrashsiteAccess.GetRejection(profileHelper, sessionId);
             if (accessRejection is not null)
                 return Body(CrashsiteTransferResponse.Rejected(accessRejection));
@@ -260,7 +260,7 @@ public sealed class CrashsiteInventoryTransferCallback(
             var success = new CrashsiteTransferResponse(true, null, operationId, moved);
             CrashsiteInventoryTransferState.Cache(operationId!, sessionId, fingerprint, success);
             CrashsiteInventoryTransferState.MarkReady(sessionId);
-            CrashsiteLog.DebugSuccess(logger, 
+            CrashsiteLog.DebugSuccess(logger,
                 $"Crashsite M3 moved {moved.Length} carried item trees into stash for session {sessionId}; " +
                 "item IDs and descendant records were preserved.");
             return Body(success);
@@ -308,8 +308,6 @@ public sealed class CrashsiteInventoryTransferCallback(
             }
         }
 
-        // One pass over the whole PMC item list (stash included) replaces the
-        // per-node full-list scans used to find children in v0.3.0.
         var childrenByParent = new Dictionary<string, List<Item>>(StringComparer.Ordinal);
         foreach (var item in items)
         {
@@ -327,13 +325,6 @@ public sealed class CrashsiteInventoryTransferCallback(
             siblings.Add(item);
         }
 
-        // Equipment roots are handled in three ways:
-        //  - Scabbard, Dogtag, ArmBand: retained with their contents.
-        //  - SecuredContainer and Pockets: the root item stays equipped (neither can be
-        //    placed in a stash), its grid contents move. In 4.1.6 the Special Inventory
-        //    slots (SpecialSlot1-3) are slots on the Pockets item, not equipment slots,
-        //    so they are retained here as Pockets children.
-        //  - Everything else moves as one intact tree.
         var equipmentId = inventory.Equipment.ToString();
         var roots = new List<Item>();
         foreach (var equipped in ChildrenOf(childrenByParent, equipmentId))
@@ -370,11 +361,6 @@ public sealed class CrashsiteInventoryTransferCallback(
             return MovePlan.Failed("The PMC stash is unavailable; no items were changed.");
         }
 
-        // v0.3.0 also ran InventoryHelper.CanPlaceItemsInInventory first. In 4.1.6 that
-        // helper builds the same stash map and runs the same FindSlotForItem/fill steps
-        // as PlaceItemInContainer below, so it duplicated the whole calculation (plus a
-        // deep clone of every tree) without adding any safety. The loop below already
-        // fails before any mutation if one tree does not fit.
         var stashMap = GetStashSlotMap(pmc);
         var planned = new List<PlannedRoot>(roots.Count);
         foreach (var root in roots)
@@ -384,8 +370,6 @@ public sealed class CrashsiteInventoryTransferCallback(
                 return MovePlan.Failed("An item tree has a missing parent or cycle; no items were changed.");
             }
 
-            // PlaceItemInContainer writes ParentId/SlotId/Location only on element [0]
-            // and reads the rest to size the tree, so only the root needs a copy.
             var placementRoot = cloner.Clone(root)
                 ?? throw new InvalidOperationException("Could not copy an item root for stash planning.");
             tree[0] = placementRoot;
@@ -395,8 +379,6 @@ public sealed class CrashsiteInventoryTransferCallback(
                 return MovePlan.Failed("There is not enough stash space for all carried Crashsite items. Free stash space and ready again.");
             }
 
-            // In 4.1.6 a caught map-fill exception still returns the successful search
-            // result without writing the root, so verify the write itself.
             if (placementRoot.Location is null ||
                 !string.Equals(placementRoot.ParentId, stashId, StringComparison.Ordinal) ||
                 !string.Equals(placementRoot.SlotId, "hideout", StringComparison.Ordinal))
@@ -419,7 +401,7 @@ public sealed class CrashsiteInventoryTransferCallback(
         IReadOnlyDictionary<string, Item> byId,
         out List<Item> tree)
     {
-        // The root is always element [0]; PlaceItemInContainer relies on that order.
+
         tree = [];
         var pending = new Stack<Item>();
         var visited = new HashSet<string>(StringComparer.Ordinal);
@@ -450,9 +432,6 @@ public sealed class CrashsiteInventoryTransferCallback(
             string.Equals(item.ParentId, questRaidRootId, StringComparison.Ordinal)) == true;
     }
 
-    // Report the real stash cell of a root the server had already moved, so the
-    // client can align its local stash view with the server instead of keeping
-    // its own placement.
     private static CrashsiteMovedRoot DescribeStashedRoot(Item item)
     {
         var location = SPTarkov.Server.Core.Extensions.ItemExtensions.GetParsedLocation(item);
@@ -461,9 +440,6 @@ public sealed class CrashsiteInventoryTransferCallback(
             : new CrashsiteMovedRoot(item.Id.ToString(), -1, -1, false);
     }
 
-    // The 4.1.6 helper is protected, while its public placement helpers accept
-    // the resulting grid. Keep this reflection target narrow and version-pinned;
-    // resolve it once instead of on every ready request.
     private static readonly MethodInfo? StashSlotMapMethod = typeof(InventoryHelper).GetMethod(
         "GetStashSlotMap",
         BindingFlags.Instance | BindingFlags.NonPublic,
@@ -480,19 +456,16 @@ public sealed class CrashsiteInventoryTransferCallback(
             ?? throw new InvalidOperationException("SPT did not return a stash occupancy map.");
     }
 
-    // Equipment roots kept with all of their contents.
     private static bool IsRetainedEquipmentSlot(string? slotId) =>
         string.Equals(slotId, "Scabbard", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(slotId, "Dogtag", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(slotId, "ArmBand", StringComparison.OrdinalIgnoreCase) ||
         IsSpecialSlot(slotId);
 
-    // Equipment roots that stay equipped while their grid contents move to stash.
     private static bool IsContentsOnlyEquipmentSlot(string? slotId) =>
         string.Equals(slotId, "SecuredContainer", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(slotId, "Pockets", StringComparison.OrdinalIgnoreCase);
 
-    // Children of a contents-only root that stay carried (Special Inventory on Pockets).
     private static bool IsRetainedChildSlot(string? slotId) => IsSpecialSlot(slotId);
 
     private static bool IsSpecialSlot(string? slotId) =>

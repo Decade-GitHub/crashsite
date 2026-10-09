@@ -1,21 +1,15 @@
 param(
     [string] $SptRoot = $env:SPT_ROOT,
-    [string] $CscPath = '',
+    [string] $CscPath = $env:CSC_PATH,
     [string] $DotnetRoot = $env:DOTNET_ROOT,
     [ValidateSet('Debug', 'Release')]
     [string] $Configuration = 'Release'
 )
 
-# Reproducible server build without a .NET SDK: compiles with Visual Studio's Roslyn
-# against the installed .NET 10 shared framework and the SPT 4.1.6 server assemblies.
-# v0.3.0 was compiled by hand with files from the git-ignored obj/ folder
-# (implicit global usings and a manual AssemblyInfo); this script generates both.
-# It only reads from $SptRoot and writes under this project folder.
-
 $ErrorActionPreference = 'Stop'
 
 if (-not $SptRoot) {
-    $SptRoot = 'SET_PATH_HERE'
+    throw 'Set SPT_ROOT or pass -SptRoot to an SPT 4.1.6 installation.'
 }
 
 if (-not $DotnetRoot) {
@@ -23,14 +17,18 @@ if (-not $DotnetRoot) {
 }
 
 if (-not $CscPath) {
-    $CscPath = 'C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\Roslyn\csc.exe'
-    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    if (-not (Test-Path -LiteralPath $CscPath -PathType Leaf) -and (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
-        $installPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
-        if ($installPath) {
-            $CscPath = Join-Path $installPath 'MSBuild\Current\Bin\Roslyn\csc.exe'
+    $compiler = Get-Command csc.exe -ErrorAction SilentlyContinue
+    if ($compiler) { $CscPath = $compiler.Source }
+    else {
+        $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+        if (Test-Path -LiteralPath $vswhere -PathType Leaf) {
+            $installPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+            if ($installPath) { $CscPath = Join-Path $installPath 'MSBuild\Current\Bin\Roslyn\csc.exe' }
         }
     }
+}
+if (-not $CscPath -or -not (Test-Path -LiteralPath $CscPath -PathType Leaf)) {
+    throw 'Set CSC_PATH or pass -CscPath to a Roslyn csc.exe compiler.'
 }
 
 function Get-LatestFrameworkDir([string] $name) {
@@ -51,7 +49,7 @@ function Get-LatestFrameworkDir([string] $name) {
 }
 
 function Get-ManagedAssemblies([string] $dir) {
-    # Shared framework folders also contain native DLLs, which csc cannot reference.
+
     Get-ChildItem -LiteralPath $dir -Filter '*.dll' -File | Where-Object {
         try {
             [void][System.Reflection.AssemblyName]::GetAssemblyName($_.FullName)
@@ -90,7 +88,6 @@ $generatedDir = Join-Path $projectDir "obj\build\$Configuration"
 $outputDir = Join-Path $projectDir "bin\$Configuration\net10.0"
 New-Item -ItemType Directory -Force -Path $generatedDir, $outputDir | Out-Null
 
-# Equivalent of <ImplicitUsings>enable</ImplicitUsings> for Microsoft.NET.Sdk.
 $globalUsings = Join-Path $generatedDir 'GlobalUsings.g.cs'
 @(
     'global using System;'
@@ -124,14 +121,13 @@ if ($Configuration -eq 'Debug') { $arguments += '/define:CRASHSITE_DEBUG', '/opt
 $arguments += $globalUsings, $assemblyInfo
 $arguments += $sources
 
-# ~300 framework references exceed the Windows command-line limit; use a response file.
 $responseFile = Join-Path $generatedDir 'csc.rsp'
 $responseLines = [string[]]($arguments | ForEach-Object {
     if ($_ -notmatch '\s') { $_ }
     elseif ($_ -match '^(/[a-z]+:)(.+)$') { $Matches[1] + '"' + $Matches[2] + '"' }
     else { '"' + $_ + '"' }
 })
-# WriteAllLines writes UTF-8 without a BOM.
+
 [System.IO.File]::WriteAllLines($responseFile, $responseLines)
 
 & $CscPath "@$responseFile"

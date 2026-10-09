@@ -20,8 +20,6 @@ public sealed record CrashsiteStarterGrant(bool Accepted, string? Reason, string
     public static CrashsiteStarterGrant Reject(string reason) => new(false, reason, null, null, null, null, null, null, []);
 }
 
-// These item trees are raid equipment, never saved into the hideout profile at ready time.
-// SPT defaults to Transient: lifecycle hooks and HTTP consumers must share this store.
 [Injectable(InjectionType.Singleton)]
 public sealed class CrashsiteStarterLoadout(PresetHelper presets, TemplateTable templates, ProfileHelper profiles)
 {
@@ -152,5 +150,4 @@ public sealed class CrashsiteStarterLoadout(PresetHelper presets, TemplateTable 
 public sealed class CrashsiteStarterRouter(JsonUtil jsonUtil, CrashsiteStarterLoadout starter, HttpResponseUtil response)
     : StaticRouter(jsonUtil, [new RouteAction<CrashsiteStarterRequest>(CrashsiteStarterLoadout.Route,
         (url, request, sessionId, output, cancellationToken) => new ValueTask<string>(response.GetBody(starter.Get(sessionId, request.ServerId))))]);
-
 

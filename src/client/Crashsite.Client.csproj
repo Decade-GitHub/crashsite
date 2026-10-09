@@ -6,7 +6,6 @@
     <RootNamespace>Crashsite.Client</RootNamespace>
     <Version>1.0.0</Version>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-    <SPT_ROOT Condition="'$(SPT_ROOT)' == ''">SET_PATH_HERE</SPT_ROOT>
   </PropertyGroup>
 
   <Target Name="CheckSptRoot" BeforeTargets="ResolveReferences">

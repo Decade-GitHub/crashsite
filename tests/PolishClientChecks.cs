@@ -6,7 +6,6 @@ using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
 
-// Runs managed helpers from the built DLL under .NET Framework, without Unity/game startup.
 internal static class PolishClientChecks
 {
     public static readonly IReadOnlyList<int> OriginalParts = new[] { 0, 1, 2, 3, 4, 5, 6 };

@@ -10,13 +10,10 @@ using SPTarkov.Server.Core.Utils.Json;
 
 namespace Crashsite.Server;
 
-// The client and server must agree on this protocol before a Crashsite raid.
-// A session-scoped entry prevents a server-only or stale-client install from
-// silently entering a raid without the matching location patches.
 internal static class CrashsiteClientHandshake
 {
     public const string Route = "/crashsite/client/handshake";
-    public const string Version = "0.14.1";
+    public const string Version = "1.0.0";
 
     private static readonly ConcurrentDictionary<MongoId, byte> ReadySessions = new();
 
@@ -74,5 +71,4 @@ public sealed class CrashsiteHandshakeCallback(
             new CrashsiteHandshakeResponse(CrashsiteClientHandshake.Version, accepted)));
     }
 }
-
 
